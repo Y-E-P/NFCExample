@@ -3,11 +3,14 @@ package ua.lampa.nfcexample;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
+import android.nfc.tech.IsoDep;
 import android.nfc.tech.Ndef;
+import android.nfc.tech.NfcA;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
@@ -17,6 +20,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
@@ -34,7 +39,11 @@ public class MainActivity extends AppCompatActivity {
         final PendingIntent pendingIntent = PendingIntent.getActivity(activity.getApplicationContext(), 0, intent, 0);
 
         String[][] techList = new String[][]{};
-        adapter.enableForegroundDispatch(activity, pendingIntent, null, techList);
+        adapter.enableForegroundDispatch(activity,
+                PendingIntent.getActivity(activity, 0, new Intent(activity, activity.getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0),
+                new IntentFilter[]{new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED), new IntentFilter(NfcAdapter.ACTION_TAG_DISCOVERED)},
+                new String[][]{new String[]{IsoDep.class.getName(), NfcA.class.getName()}});
+       // adapter.enableForegroundDispatch(activity, pendingIntent, null, techList);
     }
 
     public static void stopForegroundDispatch(final Activity activity, NfcAdapter adapter) {
@@ -50,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
         resultTv = (TextView) findViewById(R.id.textView_explanation);
 
         mNfcAdapter = NfcAdapter.getDefaultAdapter(this);
+
         if (mNfcAdapter == null) {
             // Stop here, we definitely need NFC
             Toast.makeText(this, "NFC not ", Toast.LENGTH_LONG).show();
@@ -59,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
         if (!mNfcAdapter.isEnabled()) {
             Toast.makeText(this, "NFC staat niet aan", Toast.LENGTH_SHORT).show();
         }
+
         handleIntent(getIntent());
     }
 
@@ -88,19 +99,32 @@ public class MainActivity extends AppCompatActivity {
             }
             String action = intent.getAction();
             Log.e(TAG, "Tag  " + action);
+            ((TextView)findViewById(R.id.type)).setText("Tag type:" + action);
             if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) {
-
                 String type = intent.getType();
                 if (MIME_TEXT_PLAIN.equals(type)) {
-
                     Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
                     new NdefReaderTask().execute(tag);
-
                 } else {
                     Log.d(TAG, "Wrong mime type: " + type);
                 }
             }
         }
+    }
+
+    private String ByteArrayToHexString(byte[] inarray) {
+        int i, j, in;
+        String[] hex = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"};
+        String out = "";
+
+        for (j = 0; j < inarray.length; ++j) {
+            in = (int) inarray[j] & 0xff;
+            i = (in >> 4) & 0x0f;
+            out += hex[i];
+            i = in & 0x0f;
+            out += hex[i] + ":";
+        }
+        return out;
     }
 
     private class NdefReaderTask extends AsyncTask<Tag, Void, String> {
@@ -132,16 +156,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private String readText(NdefRecord record) throws UnsupportedEncodingException {
-        /*
-         * See NFC forum specification for "Text Record Type Definition" at 3.2.1
-         *
-         * http://www.nfc-forum.org/specs/
-         *
-         * bit_7 defines encoding
-         * bit_6 reserved for future use, must be 0
-         * bit_5..0 length of IANA language code
-         */
-
             byte[] payload = record.getPayload();
 
             // Get the Text Encoding
@@ -165,19 +179,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private String ByteArrayToHexString(byte [] inarray) {
-        int i, j, in;
-        String [] hex = {"0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"};
-        String out= "";
-
-        for(j = 0 ; j < inarray.length ; ++j)
-        {
-            in = (int) inarray[j] & 0xff;
-            i = (in >> 4) & 0x0f;
-            out += hex[i];
-            i = in & 0x0f;
-            out += hex[i]+":";
-        }
-        return out;
+    private void readMiCla(Intent intent){
+        Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
+        byte[] id = tag.getId();
+        ByteBuffer wrapped = ByteBuffer.wrap(id);
+        wrapped.order(ByteOrder.LITTLE_ENDIAN);
+        int signedInt = wrapped.getInt();
+        long number = signedInt & 0xffffffffl;
+        resultTv.setText("Tag detected: " + number);
     }
 }
